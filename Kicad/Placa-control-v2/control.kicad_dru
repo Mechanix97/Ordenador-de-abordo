@@ -1,0 +1,7 @@
+(version 1)
+
+# Ignition coil input: keep 2.5 mm from every other connected net (pads, tracks and the GND pour).
+# Unconnected pads (the empty spacer pins of J2) are excluded.
+(rule "HV clearance"
+  (constraint clearance (min 2.5mm))
+  (condition "A.NetClass == 'HV' && A.Net != B.Net && B.NetName != 'unconnected-*'"))

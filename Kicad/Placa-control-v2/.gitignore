@@ -1,0 +1,9 @@
+# KiCad local files and outputs
+*.kicad_prl
+*-backups/
+fp-info-cache
+_autosave-*
+*.lck
+fab/
+*.net
+*.rpt

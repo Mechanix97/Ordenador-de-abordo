@@ -27,13 +27,22 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: KiCad version
-        run: kicad-cli version
+      - name: KiCad version and global libraries
+        run: |
+          kicad-cli version
+          # The container has no user configuration: install the default library tables
+          cfg="$HOME/.config/kicad/$(kicad-cli version | cut -d. -f1-2)"
+          mkdir -p "$cfg"
+          for t in sym-lib-table fp-lib-table; do
+            if [ -f "/usr/share/kicad/template/$t" ]; then cp "/usr/share/kicad/template/$t" "$cfg/"; fi
+          done
+          ls -la "$cfg"
 
+      # Errors fail the build; warnings (e.g. library-table issues in the container) are only reported
       - name: Electrical rules check (ERC)
         run: |
           mkdir -p "$OUT"
-          kicad-cli sch erc --severity-error --severity-warning --exit-code-violations \
+          kicad-cli sch erc --severity-error --exit-code-violations \
             -o "$OUT/erc.rpt" "$NAME.kicad_sch" || { cat "$OUT/erc.rpt"; exit 1; }
 
       - name: Design rules check (DRC + schematic parity)

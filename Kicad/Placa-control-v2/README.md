@@ -94,16 +94,17 @@ They are drawn on the silkscreen as `W1`–`W3`:
 4. On the bike, check the RPM input with the engine at idle: PA6 should show clean low pulses.
    A scope is ideal.
 
-## Firmware changes needed
+## Firmware
 
-The pins are the same as v1, but some inputs work differently:
+The pins are the same as v1, but some inputs work differently. The firmware and the `.ioc` are
+already set up for this board:
 
-| Pin | Change |
-|---|---|
-| PA6 (RPM) | Now a digital pulse from the optocoupler. Configure **TIM3_CH1 input capture with the internal pull-up**, measure the period, and ignore pulses closer than ~2 ms (ignition ringing). |
-| PA7 (fuel) | New divider: about 0.2 V (full) … 1.7 V (reserve). Recalibrate. |
-| PA8 (speed) | External pull-up now. Set the pin to no pull (it has a pull-down in the `.ioc`); the switch pulls it low. |
-| PA0 (button) | Keep the internal pull-up (already configured). |
+| Pin | Board v2 behaviour | Firmware |
+|---|---|---|
+| PA6 (RPM) | Digital pulse from the optocoupler, low on every spark | TIM3_CH1 input capture (100 kHz, falling edge, internal pull-up, digital filter). `rpm.c` ignores edges closer than 2 ms (ignition ringing) and reports 0 after 500 ms without sparks. Set `RPM_SPARKS_PER_2_REV` in `rpm.h` for your CDI. |
+| PA7 (fuel) | About 0.2 V (full) … 1.7 V (reserve), 10 kΩ source impedance | ADC2 with 239.5-cycle sampling. Calibrate `GAS_RAW_FULL` / `GAS_RAW_RESERVE` in `gas.h` with the raw value shown on the display. |
+| PA8 (speed) | External pull-up, the switch pulls it low | No internal pull. |
+| PA0 (button) | Internal pull-up | Unchanged. |
 
 ## Design rules
 

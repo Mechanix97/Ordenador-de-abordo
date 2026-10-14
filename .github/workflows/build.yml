@@ -1,0 +1,76 @@
+name: Build firmware
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ARM GCC toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-arm-none-eabi libnewlib-arm-none-eabi make
+          arm-none-eabi-gcc --version
+
+      - name: Build
+        shell: bash  # enables pipefail so a failed make is not hidden by tee
+        run: make -j"$(nproc)" all 2>&1 | tee build.log
+
+      - name: Report warnings from project code
+        run: |
+          if grep -E '^Core/.*warning:' build.log; then
+            echo "::warning::The build has compiler warnings in Core/ (see log above)"
+          fi
+
+      - name: Firmware size
+        run: |
+          arm-none-eabi-size build/Ordenador-abordo.elf
+          {
+            echo '### Firmware size'
+            echo '```'
+            arm-none-eabi-size build/Ordenador-abordo.elf
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ github.sha }}
+          path: |
+            build/Ordenador-abordo.elf
+            build/Ordenador-abordo.hex
+            build/Ordenador-abordo.bin
+            build/Ordenador-abordo.map
+          if-no-files-found: error
+
+  static-analysis:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cppcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cppcheck
+
+      # Informational only: only project code (Core/) is analysed, not the ST HAL.
+      - name: Run cppcheck on Core/
+        run: |
+          cppcheck --enable=warning,performance,portability --inline-suppr \
+            --std=c11 --platform=unspecified -DSTM32F103xB -DUSE_HAL_DRIVER \
+            -ICore/Inc --suppress=missingIncludeSystem --suppress=missingInclude \
+            --template='{file}:{line}: {severity}: {message} [{id}]' \
+            Core/Src 2> cppcheck.txt || true
+          cat cppcheck.txt
+          if [ -s cppcheck.txt ]; then
+            echo "::warning::cppcheck reported $(wc -l < cppcheck.txt) finding(s) in Core/"
+          fi

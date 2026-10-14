@@ -1,0 +1,4 @@
+(sym_lib_table
+	(version 7)
+	(lib (name "Ordenador")(type "KiCad")(uri "${KIPRJMOD}/lib/ordenador.kicad_sym")(options "")(descr "Ordenador de abordo project symbols"))
+)

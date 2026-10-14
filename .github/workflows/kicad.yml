@@ -1,0 +1,84 @@
+name: KiCad
+
+on:
+  push:
+    branches: [master]
+    paths: ["Kicad/**", ".github/workflows/kicad.yml"]
+  pull_request:
+    paths: ["Kicad/**", ".github/workflows/kicad.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  control-board:
+    runs-on: ubuntu-24.04
+    container:
+      image: kicad/kicad:10.0
+      options: --user root
+    env:
+      PROJECT_DIR: Kicad/Placa-control-v2
+      NAME: control
+      OUT: fab
+    defaults:
+      run:
+        working-directory: Kicad/Placa-control-v2
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: KiCad version and global libraries
+        run: |
+          kicad-cli version
+          # The container has no user configuration: install the default library tables
+          cfg="$HOME/.config/kicad/$(kicad-cli version | cut -d. -f1-2)"
+          mkdir -p "$cfg"
+          for t in sym-lib-table fp-lib-table; do
+            if [ -f "/usr/share/kicad/template/$t" ]; then cp "/usr/share/kicad/template/$t" "$cfg/"; fi
+          done
+          ls -la "$cfg"
+
+      # Errors fail the build; warnings (e.g. library-table issues in the container) are only reported
+      - name: Electrical rules check (ERC)
+        run: |
+          mkdir -p "$OUT"
+          kicad-cli sch erc --severity-error --exit-code-violations \
+            -o "$OUT/erc.rpt" "$NAME.kicad_sch" || { cat "$OUT/erc.rpt"; exit 1; }
+
+      - name: Design rules check (DRC + schematic parity)
+        run: |
+          kicad-cli pcb drc --schematic-parity --severity-error --exit-code-violations \
+            -o "$OUT/drc.rpt" "$NAME.kicad_pcb" || { cat "$OUT/drc.rpt"; exit 1; }
+
+      - name: Export schematic PDF and BOM
+        run: |
+          kicad-cli sch export pdf -o "$OUT/$NAME-schematic.pdf" "$NAME.kicad_sch"
+          kicad-cli sch export bom -o "$OUT/$NAME-bom.csv" \
+            --fields 'Reference,Value,Footprint,${QUANTITY},Description' \
+            --labels 'Refs,Value,Footprint,Qty,Notes' --group-by Value,Footprint \
+            "$NAME.kicad_sch"
+
+      - name: Export PCB (toner-transfer PDF, Gerbers, drill)
+        run: |
+          # Copper as seen from the component side, 1:1, black on white (for toner transfer)
+          kicad-cli pcb export pdf --mode-single --black-and-white \
+            -l B.Cu,Edge.Cuts -o "$OUT/$NAME-copper-bottom.pdf" "$NAME.kicad_pcb"
+          kicad-cli pcb export pdf --mode-single --black-and-white \
+            -l F.SilkS,F.Fab,Edge.Cuts -o "$OUT/$NAME-assembly-top.pdf" "$NAME.kicad_pcb"
+          mkdir -p "$OUT/gerbers"
+          kicad-cli pcb export gerbers -l B.Cu,F.SilkS,B.Mask,Edge.Cuts -o "$OUT/gerbers/" "$NAME.kicad_pcb"
+          kicad-cli pcb export drill --format excellon -o "$OUT/gerbers/" "$NAME.kicad_pcb"
+
+      - name: Render 3D views
+        continue-on-error: true
+        run: |
+          kicad-cli pcb render --side top --quality basic -w 1600 -h 900 -o "$OUT/$NAME-top.png" "$NAME.kicad_pcb"
+          kicad-cli pcb render --side bottom --quality basic -w 1600 -h 900 -o "$OUT/$NAME-bottom.png" "$NAME.kicad_pcb"
+
+      - name: Upload fabrication files
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: control-board-fab-${{ github.sha }}
+          path: ${{ env.PROJECT_DIR }}/${{ env.OUT }}
+          if-no-files-found: error
